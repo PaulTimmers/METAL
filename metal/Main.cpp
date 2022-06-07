@@ -36,10 +36,15 @@ Vector maxFrequencies;
 
 Vector *    custom = NULL;
 StringArray customVariables;
-StringArray customLabels;
+StringArray customVariableLabels;
+IntArray    customVariableTypes;
 
 Vector    hetStatistic;
 IntArray  hetDegreesOfFreedom;
+
+StringArray *    strings = NULL;
+StringArray customStrings;
+StringArray customStringLabels;
 
 StringArray allele1;
 StringArray allele2;
@@ -55,15 +60,15 @@ FileSummary * processedFiles = NULL;
 double weight = 1.0;
 double minweight = 1.0;
 
-String markerLabel  = "MARKER";
+String markerLabel  = "SNPID";
 String weightLabel  = "N";
-String pvalueLabel  = "PVALUE";
-String effectLabel  = "EFFECT";
-String stderrLabel  = "STDERR";
+String pvalueLabel  = "P";
+String effectLabel  = "BETA1";
+String stderrLabel  = "SE";
 String strandLabel  = "STRAND";
-String frequencyLabel = "FREQ";
-String firstAllele  = "ALLELE1";
-String secondAllele = "ALLELE2";
+String frequencyLabel = "FREQ1";
+String firstAllele  = "A1";
+String secondAllele = "A0";
 String chromosomeLabel = "CHROMOSOME";
 String positionLabel = "POSITION";
 
@@ -163,11 +168,15 @@ void PrintablePvalue(String & buffer, double statistic)
    }
 
 int CreateNewMarkerId(const String &markerName) {
-    int customColumns = customLabels.Length();
+    int customVariableColumns = customVariableLabels.Length();
+    int customStringColumns = customStringLabels.Length();
     int marker = 0;
 
-    if (markerLookup.Entries() == 0 && customColumns > 0)
-        custom = new Vector[customColumns];
+    if (markerLookup.Entries() == 0 && customVariableColumns > 0)
+       custom = new Vector[customVariableColumns];
+
+    if (markerLookup.Entries() == 0 && customStringColumns > 0)
+       strings = new StringArray[customStringColumns];
 
     markerLookup.SetInteger(markerName, marker = markerLookup.Entries());
     statistics.Push(0);
@@ -183,8 +192,11 @@ int CreateNewMarkerId(const String &markerName) {
     positions.Push("");
     original_flipped += '?';
 
-    for (int i = 0; i < customColumns; i++)
+    for (int i = 0; i < customVariableColumns; i++)
         custom[i].Push(0);
+
+    for (int i = 0; i < customStringColumns; i++)
+        strings[i].Push(0);
 
     if (genomicControlFilter.Length())
         genomicControlFilter += '.';
@@ -231,11 +243,19 @@ void ClearAll() {
     filenames.Clear();
     directions.Clear();
     customVariables.Clear();
-    customLabels.Clear();
+    customVariableLabels.Clear();
+    customVariableTypes.Clear();
+    customStrings.Clear();
+    customStringLabels.Clear();
 
     if (custom != NULL) {
         delete[] custom;
         custom = NULL;
+    }
+    
+    if (strings != NULL) {
+        delete [] strings;
+        strings = NULL;
     }
 
     ClearFilters();
@@ -452,24 +472,24 @@ void FilterSummary()
 
 void NumbersToLetters(String & al)
    {
-   if (al == "1") al = "a"; else
-   if (al == "2") al = "c"; else
-   if (al == "3") al = "g"; else
-   if (al == "4") al = "t";
+   if (al == "1") al = "A"; else
+   if (al == "2") al = "C"; else
+   if (al == "3") al = "G"; else
+   if (al == "4") al = "T";
    }
 
 void FlipAllele(String & al)
    {
-   if (al == "A" || al == "a") al = "t"; else
-   if (al == "C" || al == "c") al = "g"; else
-   if (al == "G" || al == "g") al = "c"; else
-   if (al == "T" || al == "t") al = "a";
+   if (al == "A" || al == "a") al = "T"; else
+   if (al == "C" || al == "c") al = "G"; else
+   if (al == "G" || al == "g") al = "C"; else
+   if (al == "T" || al == "t") al = "A";
    }
 
 bool FlipAlleles(String & al1, String & al2, double & effect, double & freq)
    {
-   al1.ToLower();
-   al2.ToLower();
+   al1.ToUpper();
+   al2.ToUpper();
 
    if (al1 > al2)
       {
@@ -478,7 +498,7 @@ bool FlipAlleles(String & al1, String & al2, double & effect, double & freq)
       freq = 1.0 - freq;
       }
 
-   if (al1 == "a" || al1 == "c" && al2 == "g")
+   if (al1 == "A" || al1 == "C" && al2 == "G")
       return false;
 
    FlipAllele(al1);
@@ -572,19 +592,22 @@ void Analyze(bool heterogeneity) {
         return;
     }
 
-    fprintf(f, "%sMarkerName\tAllele1\tAllele2\t%s%s%s\t%s%s\t%s\tDirection%s%s",
-            trackPositions ? "Chromosome\tPosition\t" : "",
-            averageFrequencies ? "Freq1\tFreqSE\t" : "",
-            minMaxFrequencies ? "MinFreq\tMaxFreq\t" : "",
-            useStandardErrors ? "Effect" : "Weight",
-            useStandardErrors ? "StdErr" : "Zscore",
-            studyOverlap ? "\tN" : "",
-            logPValue ? "log(P)" : "P-value",
-            heterogeneity ? "\tHetISq\tHetChiSq\tHetDf\t" : "",
-            heterogeneity ? (logPValue ? "logHetP" : "HetPVal") : "");
+    fprintf(f, "%ssnpid\ta1\ta0\t%s%s%s\t%s%s\t%s\tdirection%s%s",
+            trackPositions ? "chr\tpos\t" : "",
+            averageFrequencies ? "freq1\tfreq1_se\t" : "",
+            minMaxFrequencies ? "min_freq1\tmax_freq1\t" : "",
+            useStandardErrors ? "beta1" : "weight",
+            useStandardErrors ? "se" : "z",
+            studyOverlap ? "\tn" : "",
+            logPValue ? "log_p" : "p",
+            heterogeneity ? "\tisq_het\tchisq_het\tdf_het\t" : "",
+            heterogeneity ? (logPValue ? "log_p_het" : "p_het") : "");
 
     for (int i = 0; i < customVariables.Length(); i++)
-        fprintf(f, "\t%s", (const char *) customVariables[i]);
+       fprintf(f, "\t%s", (const char *) customVariables[i]);
+
+    for (int i = 0; i < customStrings.Length(); i++)
+       fprintf(f, "\t%s", (const char *) customStrings[i]);
 
     fprintf(f, "\n");
 
@@ -677,7 +700,10 @@ void Analyze(bool heterogeneity) {
             }
 
             for (int j = 0; j < customVariables.Length(); j++)
-                fprintf(f, "\t%g", custom[j][marker]);
+                fprintf(f, "\t%g", customVariableTypes[j] == 0 ? custom[j][marker] : custom[j][marker] / weights[marker]);
+
+            for (int j = 0; j < customStrings.Length(); j++)
+                fprintf(f, "\t%s", (const char *) strings[j][marker]);
 
             fprintf(f, "\n");
 
@@ -711,45 +737,48 @@ void Analyze(bool heterogeneity) {
     fprintf(f, "# This file contains a short description of the columns in the\n"
                     "# meta-analysis summary file, named '%s'\n\n"
                     "%s"
-                    "# Marker      - this is the marker name\n"
-                    "# Allele1     - the first allele for this marker in the first file where it occurs\n"
-                    "# Allele2     - the second allele for this marker in the first file where it occurs\n"
+                    "# snpid      - this is the marker name\n"
+                    "# a1     - the first allele for this marker in the first file where it occurs\n"
+                    "# a0     - the second allele for this marker in the first file where it occurs\n"
                     "%s"
                     "%s"
                     "%s"
                     "%s"
                     "# %s meta-analysis p-value\n"
-                    "# Direction   - summary of effect direction for each study, with one '+' or '-' per study\n"
+                    "# direction   - summary of effect direction for each study, with one '+' or '-' per study\n"
                     "%s%s",
             (const char *) filename,
             !trackPositions ? "" :
-            "# Chromosome  - chromosome name\n"
-            "# Position    - chromosomal position\n" ,
+            "# chr  - chromosome name\n"
+            "# position    - chromosomal position\n" ,
             !averageFrequencies ? "" :
-            "# Freq1       - weighted average of frequency for allele 1 across all studies\n"
-            "# FreqSE      - corresponding standard error for allele frequency estimate\n",
+            "# freq1       - weighted average of frequency for allele 1 across all studies\n"
+            "# freq1_se      - corresponding standard error for allele frequency estimate\n",
             !minMaxFrequencies ? "" :
-            "# MinFreq     - minimum frequency for allele 1 across all studies\n"
-            "# MaxFreq     - maximum frequency for allele 1 across all studies\n",
+            "# freq1_min     - minimum frequency for allele 1 across all studies\n"
+            "# freq1_max     - maximum frequency for allele 1 across all studies\n",
             useStandardErrors ?
-            "# Effect      - overall estimated effect size for allele1\n"
-            "# StdErr      - overall standard error for effect size estimate\n" :
-            "# Weight      - the sum of the individual study weights (typically, N) for this marker\n"
-            "# Z-score     - the combined z-statistic for this marker\n",
+            "# beta      - overall estimated effect size for allele1\n"
+            "# se      - overall standard error for effect size estimate\n" :
+            "# weight      - the sum of the individual study weights (typically, N) for this marker\n"
+            "# z     - the combined z-statistic for this marker\n",
             !studyOverlap ? "" :
-            "# N           - sample size corrected for overlap between studies\n",
-            logPValue ? "log(P)      - log of" : "P-value     -",
+            "# n           - sample size corrected for overlap between studies\n",
+            logPValue ? "log_p      - log of" : "p     -",
             !heterogeneity ? "" :
-            "# HetISq      - I^2 statistic which measures heterogeneity on scale of 0-100%\n"
-            "# HetChiSq    - chi-squared statistic in simple test of heterogeneity\n"
-            "# df          - degrees of freedom for heterogeneity statistic\n",
+            "# isq_het      - I^2 statistic which measures heterogeneity on scale of 0-100%\n"
+            "# chisq_het    - chi-squared statistic in simple test of heterogeneity\n"
+            "# df_het          - degrees of freedom for heterogeneity statistic\n",
             !heterogeneity ? "" :
             logPValue ?
-            "# logHetP     - log of p-value for heterogeneity statistic\n" :
-            "# HetPVal     - P-value for heterogeneity statistic\n");
+            "# log_p_het     - log of p-value for heterogeneity statistic\n" :
+            "# p_het     - P-value for heterogeneity statistic\n");
 
     for (int i = 0; i < customVariables.Length(); i++)
-        fprintf(f, "# %-9s - custom variable %d\n", (const char *) customVariables[i], i + 1);
+       fprintf(f, "# %-9s - custom variable of type '%s'\n", (const char *) customVariables[i], customVariableTypes[i] == 0 ? "additive" : "weighted");
+
+    for (int i = 0; i < customStrings.Length(); i++)
+       fprintf(f, "# %-9s - custom variable of type 'persistent'\n", (const char *) customStrings[i]);
 
     fprintf(f, "\n# Input for this meta-analysis was stored in the files:\n");
     for (int i = 0; i < filenames.Length(); i++)
@@ -903,17 +932,33 @@ void ProcessFile(String & filename, FileSummary * history) {
     if (positionColumn >= minColumns && trackPositions) minColumns = positionColumn + 1;
     if (filterColumn.Max() >= minColumns) minColumns = filterColumn.Max() + 1;
 
-    IntArray customColumns(customLabels.Length());
-    for (int i = 0; i < customLabels.Length(); i++) {
-        customColumns[i] = tokens.SlowFind(customLabels[i]);
-        if (customColumns[i] < 0) {
-            printf("## ERROR: Required column '%s' not found\n\n", (const char *) customLabels[i]);
-            ifclose(f);
-            return;
-        }
-    }
-    if (customColumns.Max() > minColumns)
-        minColumns = customColumns.Max();
+    IntArray customVariableColumns(customVariableLabels.Length());
+    for (int i = 0; i < customVariableLabels.Length(); i++)
+       {
+       customVariableColumns[i] = tokens.SlowFind(customVariableLabels[i]);
+       if (customVariableColumns[i] < 0)
+          {
+          printf("## ERROR: Required column '%s' not found\n\n", (const char *) customVariableLabels[i]);
+          ifclose(f);
+          return;
+          }
+       }
+    if (customVariableColumns.Max() > minColumns)
+       minColumns = customVariableColumns.Max();
+
+    IntArray customStringColumns(customStringLabels.Length());
+    for (int i = 0; i < customStringLabels.Length(); i++)
+       {
+       customStringColumns[i] = tokens.SlowFind(customStringLabels[i]);
+       if (customStringColumns[i] < 0)
+          {
+          printf("## ERROR: Required column '%s' not found\n\n", (const char *) customStringLabels[i]);
+          ifclose(f);
+          return;
+          }
+       }
+    if (customStringColumns.Max() > minColumns)
+       minColumns = customStringColumns.Max();
 
     history->minColumns = minColumns;
 
@@ -966,21 +1011,24 @@ void ProcessFile(String & filename, FileSummary * history) {
     int shortColumnCount = 0;
     int badChromosome = 0;
     int badPosition = 0;
-
+    IntArray invalidcustomstrings(customStringLabels.Length());
+    for (int i = 0; i < customStringLabels.Length(); i++)
+       invalidcustomstrings[i] = 0;
+   
     history->weight = weight;
 
     filenames.Push(filename);
 
     if (verbose) {
-        printf("# MARKER\tAL1\tAL2\t");
+        printf("# SNPID\tA1\tA0\t");
 
         if (!useStandardErrors)
-            printf("N\tZ\tPVAL\t");
+            printf("N\tZ\tP\t");
         else
-            printf("EFF\tSTDERR\tPVAL\t");
+            printf("BETA1\tSE\tP\t");
 
         if (minMaxFrequencies || averageFrequencies)
-            printf("FREQ\t");
+            printf("FREQ1\t");
 
         printf("SOURCE\n");
     }
@@ -1212,8 +1260,22 @@ void ProcessFile(String & filename, FileSummary * history) {
                 maxFrequencies[marker] = freq;
         }
 
-        for (int i = 0; i < customColumns.Length(); i++)
-            custom[i][marker] += tokens[customColumns[i]].AsDouble();
+        for (int i = 0; i < customVariableColumns.Length(); i++)
+            custom[i][marker] += customVariableTypes[i] == 0 ? tokens[customVariableColumns[i]].AsDouble() : w * tokens[customVariableColumns[i]].AsDouble();
+
+        for (int i = 0; i < customStringColumns.Length(); i++)
+           if (strings[i][marker] == "")
+              strings[i][marker] = tokens[customStringColumns[i]];
+           else if (strings[i][marker] != tokens[customStringColumns[i]])
+              {
+              if (++invalidcustomstrings[i] <= maxWarnings)
+                 printf("## WARNING: Variable '%s' for marker '%s' is '%s'; set to '%s' to match previous files\n",
+                    (const char *) customStringLabels[i],
+                    (const char *) tokens[markerColumn],
+                    (const char *) tokens[customStringColumns[i]],
+                    (const char *) strings[i][marker]);
+              }
+
 
         history->processedMarkers++;
     }
@@ -1221,6 +1283,10 @@ void ProcessFile(String & filename, FileSummary * history) {
     if (invalid > maxWarnings)
         printf("## WARNING: Invalid %s for %d other markers also ignored\n",
                useStandardErrors ? "standard errors" : "p-values", invalid - maxWarnings);
+
+    for (int i = 0; i < customStringColumns.Length(); i++)
+       if (invalidcustomstrings[i] > maxWarnings)
+          printf("## WARNING: Variable '%s' for %d other markers set to match previous files\n", (const char *) customStringLabels[i], invalidcustomstrings[i] - maxWarnings);
 
     if (invalidEffect > maxWarnings)
         printf("## WARNING: Invalid log(effect) for %d other markers also ignored\n", invalidEffect - maxWarnings);
@@ -1692,6 +1758,7 @@ void ShowHelp(bool startup)
                    "# Options to enable tracking of user defined variables ...\n"
                    "#   CUSTOMVARIABLE   [VARNAME]\n"
                    "#   LABEL            [VARNAME] AS [HEADER]\n"
+                   "#   SET              [VARNAME] TO [ADDITIVE|WEIGHTED|PERSISTENT]\n"
                    "#\n"
                    "# Options to enable tracking of chromosomes and positions ...\n"
                    "#   TRACKPOSITIONS   [ON|OFF]                    (%s = %s\n"
@@ -1822,21 +1889,58 @@ void RunScript(FILE * file)
             }
         }
 
-        if (tokens[0].MatchesBeginningOf("CUSTOMVARIABLE") == 0 && tokens[0].Length() > 1) {
-            if (markerLookup.Entries()) {
-                printf("## ERROR: Meta-analysis in progress - before creating custom variables, use CLEAR command\n");
-                continue;
-            }
+        if (tokens[0].MatchesBeginningOf("CUSTOMVARIABLE") == 0 && tokens[0].Length() > 1)
+           {
+           if (markerLookup.Entries())
+              {
+              printf("## ERROR: Meta-analysis in progress - before creating custom variables, use CLEAR command\n");
+              continue;
+              }
 
-            if (customVariables.SlowFind(tokens[1]) >= 0)
-                printf("## Variable '%s' already defined\n", (const char *) tokens[1]);
-            else {
-                printf("## Created custom variable '%s'\n", (const char *) tokens[1]);
-                customVariables.Push(tokens[1]);
-                customLabels.Push(tokens[1]);
-            }
-            continue;
-        }
+           if (customVariables.SlowFind(tokens[1]) >= 0 || customStrings.SlowFind(tokens[1]) >= 0)
+              {
+              printf("## Variable '%s' already defined ...\n", (const char *) tokens[1]);
+              continue;
+              }
+
+           if (tokens.Length() > 2)
+              {
+              if (tokens[2].MatchesBeginningOf("ADDITIVE") == 0)
+                 {
+                 printf("## Created custom variable '%s' of type 'additive' (summed total across files) ...\n", (const char *) tokens[1]);
+                 customVariables.Push(tokens[1]);
+                 customVariableLabels.Push(tokens[1]);
+                 customVariableTypes.Push(0);
+                 continue;
+                 }
+
+              if (tokens[2].MatchesBeginningOf("WEIGHTED") == 0)
+                 {
+                 printf("## Created custom variable '%s' of type 'weighted' (weighted average across files) ...\n", (const char *) tokens[1]);
+                 customVariables.Push(tokens[1]);
+                 customVariableLabels.Push(tokens[1]);
+                 customVariableTypes.Push(1);
+                 continue;
+                 }
+
+              if (tokens[2].MatchesBeginningOf("PERSISTENT") == 0)
+                 {
+                 printf("## Created custom variable '%s' of type 'persistent' (single value determined by first file) ...\n", (const char *) tokens[1]);
+                 customStrings.Push(tokens[1]);
+                 customStringLabels.Push(tokens[1]);
+                 continue;
+                 }
+              }
+              else
+              {
+              printf("## Created custom variable '%s'. By default this is a summed total across files ...\n", (const char *) tokens[1]);
+              customVariables.Push(tokens[1]);
+              customVariableLabels.Push(tokens[1]);
+              customVariableTypes.Push(0);
+              continue;
+              }
+           }
+
 
         if (tokens[0].MatchesBeginningOf("DEFAULTWEIGHT") == 0) {
             weight = tokens[1].AsDouble();
@@ -2183,20 +2287,105 @@ void RunScript(FILE * file)
             continue;
         }
 
-        if (tokens[0].MatchesBeginningOf("LABEL") == 0 &&
-            tokens[2].MatchesBeginningOf("AS") == 0 &&
-            tokens.Length() > 3) {
-            int customId = customVariables.SlowFind(tokens[1]);
+              if (tokens[0].MatchesBeginningOf("LABEL") == 0 &&
+          tokens[2].MatchesBeginningOf("AS") == 0 &&
+          tokens.Length() > 3)
+          {
+          int customId = customVariables.SlowFind(tokens[1]);
 
-            if (customId < 0) {
-                printf("## ERROR: Custom variable '%s' is undefined\n", (const char *) tokens[0]);
-                continue;
+          if (customId < 0)
+            {
+               customId = customStrings.SlowFind(tokens[1]);
+
+               if (customId < 0)
+                  {
+                  printf("## ERROR: Custom variable '%s' is undefined ...\n", (const char *) tokens[0]);
+                  continue;
+                  }
+
+               customStringLabels[customId] = tokens[3];
+               printf("## Set header for '%s' to '%s' ... \n", (const char *) tokens[1], (const char *) tokens[3]);
+               continue;
             }
 
-            customLabels[customId] = tokens[3];
-            printf("## Set header for '%s' to '%s'\n", (const char *) tokens[1], (const char *) tokens[3]);
-            continue;
-        }
+          customVariableLabels[customId] = tokens[3];
+          printf("## Set header for '%s' to '%s' ...\n", (const char *) tokens[1], (const char *) tokens[3]);
+          continue;
+          }
+
+        if (tokens[0].MatchesBeginningOf("SET") == 0 &&
+            tokens[2].MatchesBeginningOf("TO") == 0 &&
+            tokens.Length() > 3)
+           {
+           int customId = customVariables.SlowFind(tokens[1]);
+
+           if (customId < 0)
+              {
+                 customId = customStrings.SlowFind(tokens[1]);
+
+                 if (tokens[3].MatchesBeginningOf("ADDITIVE") == 0)
+                    {
+                    customVariables.Push(customStrings[customId]);
+                    customVariableLabels.Push(customStringLabels[customId]);
+                    customVariableTypes.Push(0);
+                    customStrings.Delete(customId);
+                    customStringLabels.Delete(customId);
+                    printf("## Set variable '%s' type to 'additive' (summed total across files) ...\n", (const char *) tokens[1]);
+                    continue;
+                    }
+
+                 if (tokens[3].MatchesBeginningOf("WEIGHTED") == 0)
+                    {
+                    customVariables.Push(customStrings[customId]);
+                    customVariableLabels.Push(customStringLabels[customId]);
+                    customVariableTypes.Push(1);
+                    customStrings.Delete(customId);
+                    customStringLabels.Delete(customId);
+                    printf("## Set variable '%s' type to 'weighted' (weighted average across files) ...\n", (const char *) tokens[1]);
+                    continue;
+                    }
+
+                 if (tokens[3].MatchesBeginningOf("PERSISTENT") == 0)
+                    {
+                    printf("## Set variable '%s' type to 'persistent' (single value determined by first file) ...\n", (const char *) tokens[1]);
+                    continue;
+                    }
+
+                 if (customId < 0)
+                    {
+                    printf("## ERROR: Custom variable '%s' is undefined ...\n", (const char *) tokens[0]);
+                    continue;
+                    }
+
+              }
+
+           if (tokens[3].MatchesBeginningOf("ADDITIVE") == 0)
+              {
+              customVariableTypes[customId] = 0;
+              printf("## Set variable '%s' type to 'additive' (summed total across files) ...\n", (const char *) tokens[1]);
+              continue;
+              }
+
+           if (tokens[3].MatchesBeginningOf("WEIGHTED") == 0)
+              {
+              customVariableTypes[customId] = 1;
+              printf("## Set variable '%s' type to 'weighted' (weighted average across files) ...\n", (const char *) tokens[1]);
+              continue;
+              }
+
+           if (tokens[3].MatchesBeginningOf("PERSISTENT") == 0)
+              {
+              customStrings.Push(customVariables[customId]);
+              customStringLabels.Push(customVariableLabels[customId]);
+              customVariables.Delete(customId);
+              customVariableTypes.Delete(customId);
+              customVariableLabels.Delete(customId);
+              printf("## Set variable '%s' type to 'persistent' (single value determined by first file) ...\n", (const char *) tokens[1]);
+              continue;
+              }
+
+           }
+
 
         printf("## Command not recognized - type HELP to list available commands\n");
     }
