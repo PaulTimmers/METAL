@@ -1,3 +1,14 @@
+This fork has made two changes:
+1. Option to specify custom variable types (PERSISTENT, ADDITIVE, WEIGHTED)
+  - PERSISTENT: column value from the first file is used
+  - ADDITIVE: column value is summed up across files
+  - WEIGHTED: column values are meta-analysed using same weighting scheme as effects
+2. Default column headers are set to Wilson group headers
+
+For questions or comments, please email paul.timmers@ed.ac.uk
+
+---
+
 # METAL
 
 [![Build Status](https://travis-ci.org/statgen/METAL.svg?branch=master)](https://travis-ci.org/statgen/METAL)
